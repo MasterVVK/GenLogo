@@ -160,3 +160,4 @@ cython_debug/
 .idea/
 /static/images/*
 !/static/images/
+!/static/images/.gitkeep
