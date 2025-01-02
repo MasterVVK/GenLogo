@@ -4,7 +4,7 @@ import requests
 import logging
 import time
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import FOLDER_ID, OAUTH_TOKEN, IMAGES_PATH
 
 logger = logging.getLogger(__name__)
@@ -13,25 +13,46 @@ class YandexArtService:
     """Класс для взаимодействия с Yandex-Art API."""
     def __init__(self):
         self.iam_token = None
+        self.token_expiry_time = None  # Время, до которого токен действителен
         self.max_prompt_length = 500  # Максимальная длина текста для API
 
+    def is_token_expired(self):
+        """
+        Проверяет, истек ли токен.
+        :return: True, если токен истек или отсутствует, иначе False.
+        """
+        if not self.token_expiry_time:
+            return True
+        return datetime.now() >= self.token_expiry_time
+
     def update_iam_token(self):
-        """Обновляет IAM-токен для Yandex Cloud."""
+        """
+        Обновляет IAM-токен для Yandex Cloud, если он отсутствует или истек.
+        """
+        if not self.is_token_expired():
+            logger.info("IAM-токен еще действителен. Обновление не требуется.")
+            return
+
         try:
+            logger.info("Обновление IAM-токена...")
             url = "https://iam.api.cloud.yandex.net/iam/v1/tokens"
             headers = {"Content-Type": "application/json"}
             data = {"yandexPassportOauthToken": OAUTH_TOKEN}
 
             response = requests.post(url, headers=headers, json=data)
             response.raise_for_status()
+
             self.iam_token = response.json().get("iamToken")
-            logger.info("IAM-токен успешно обновлен")
+            self.token_expiry_time = datetime.now() + timedelta(hours=1)  # Токен действителен 1 час
+            logger.info("IAM-токен успешно обновлен.")
         except Exception as e:
             logger.error(f"Ошибка при обновлении IAM-токена: {e}")
             raise
 
     def create_image_path(self):
-        """Создает путь для сохранения изображения."""
+        """
+        Создает путь для сохранения изображения.
+        """
         current_date = datetime.now()
         year = current_date.strftime("%Y")
         month = current_date.strftime("%m")
@@ -43,9 +64,12 @@ class YandexArtService:
         return os.path.join(directory, file_name)
 
     def generate_image(self, prompt: str) -> str:
-        """Генерирует изображение через Yandex-Art API."""
-        if not self.iam_token:
-            self.update_iam_token()
+        """
+        Генерирует изображение через Yandex-Art API.
+        :param prompt: Текстовый запрос для генерации изображения.
+        :return: Путь к сохраненному изображению.
+        """
+        self.update_iam_token()  # Обновляем IAM-токен, если необходимо
 
         # Ограничение длины текста
         if len(prompt) > self.max_prompt_length:
